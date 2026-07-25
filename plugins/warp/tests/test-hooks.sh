@@ -341,6 +341,23 @@ assert_json_field "still emits question_asked" "$BODY" ".event" "question_asked"
 assert_json_field "falls back to a generic summary" "$BODY" ".summary" "Waiting for your answer"
 
 echo ""
+echo "--- Notification: idle_prompt passes through unchanged ---"
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","notification_type":"idle_prompt","message":"Claude is waiting"}' \
+    | bash "$HOOK_DIR/on-notification.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "still emits idle_prompt" "$BODY" ".event" "idle_prompt"
+
+echo ""
+echo "--- Notification: agent_needs_input maps to a blocked event ---"
+# Passed through verbatim this would reach Warp as an unrecognised event and
+# leave the session looking like it is still working.
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","notification_type":"agent_needs_input","message":"Claude needs your input"}' \
+    | bash "$HOOK_DIR/on-notification.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "maps to question_asked" "$BODY" ".event" "question_asked"
+assert_json_field "keeps the notification message" "$BODY" ".summary" "Claude needs your input"
+
+echo ""
 echo "--- Elicitation ---"
 OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","message":"Enter your API key"}' \
     | bash "$HOOK_DIR/on-elicitation.sh" 2>/dev/null)

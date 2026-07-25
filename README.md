@@ -51,7 +51,7 @@ The plugin registers nine hooks:
 - **SessionStart** — emits the plugin version and a welcome system message
 - **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification
 - **StopFailure** — fires when a turn ends in an error
-- **Notification** (`idle_prompt`) — fires when Claude has been idle and needs your input
+- **Notification** (`idle_prompt`, `agent_needs_input`) — fires when Claude has been idle or is otherwise waiting on your input
 - **PermissionRequest** — fires when Claude wants to run a tool, includes the tool name and a preview of its input
 - **PreToolUse** (`AskUserQuestion`, `ExitPlanMode`) — fires when Claude stops to ask you a question or to get a plan approved, and reports the session as blocked on you
 - **Elicitation** — fires when an MCP server asks you for input, which blocks the session the same way

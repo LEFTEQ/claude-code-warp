@@ -1,6 +1,7 @@
 #!/bin/bash
-# Hook script for Claude Code Notification event (idle_prompt only)
-# Sends a structured Warp notification when Claude has been idle
+# Hook script for Claude Code Notification event
+# Sends a structured Warp notification when Claude has been idle or is waiting
+# on the user.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/should-use-structured.sh"
@@ -21,7 +22,16 @@ NOTIF_TYPE=$(echo "$INPUT" | jq -r '.notification_type // "unknown"' 2>/dev/null
 MSG=$(echo "$INPUT" | jq -r '.message // "Input needed"' 2>/dev/null)
 [ -z "$MSG" ] && MSG="Input needed"
 
-BODY=$(build_payload "$INPUT" "$NOTIF_TYPE" \
+# Map the notification type onto a protocol event. Most types are already event
+# names and pass straight through; `agent_needs_input` is not, and would reach
+# Warp as an unrecognised event that leaves the session looking like it is still
+# working, when it is in fact waiting on the user.
+case "$NOTIF_TYPE" in
+    agent_needs_input) EVENT="question_asked" ;;
+    *)                 EVENT="$NOTIF_TYPE" ;;
+esac
+
+BODY=$(build_payload "$INPUT" "$EVENT" \
     --arg summary "$MSG")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
