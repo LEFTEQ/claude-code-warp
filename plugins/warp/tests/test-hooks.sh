@@ -105,6 +105,15 @@ assert_json_field "event is idle_prompt" "$PAYLOAD" ".event" "idle_prompt"
 assert_json_field "summary present" "$PAYLOAD" ".summary" "Claude is waiting for your input"
 
 echo ""
+echo "--- Question asked event ---"
+PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "question_asked" \
+    --arg summary "Which database?" \
+    --arg tool_name "AskUserQuestion")
+assert_json_field "event is question_asked" "$PAYLOAD" ".event" "question_asked"
+assert_json_field "summary present" "$PAYLOAD" ".summary" "Which database?"
+assert_json_field "tool_name present" "$PAYLOAD" ".tool_name" "AskUserQuestion"
+
+echo ""
 echo "--- JSON special characters in values ---"
 PAYLOAD=$(build_payload '{"session_id":"s1","cwd":"/tmp/proj"}' "stop" \
     --arg query 'what does "hello world" mean?' \
@@ -282,10 +291,71 @@ assert_eq "legacy Warp shows active message" \
 echo ""
 echo "--- Modern-only hooks exit silently without protocol version ---"
 
-for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh; do
+for HOOK in on-permission-request.sh on-prompt-submit.sh on-post-tool-use.sh \
+            on-pre-tool-use.sh on-elicitation.sh; do
     echo '{}' | bash "$HOOK_DIR/$HOOK" 2>/dev/null
     assert_eq "$HOOK exits 0 without protocol version" "0" "$?"
 done
+
+echo ""
+echo "=== Blocked-state hooks ==="
+
+# Extracts the JSON body out of the OSC 777 sequence a hook emits, so the
+# summary-building logic inside each script can be asserted end to end.
+osc_body() {
+    local seq
+    seq=$(echo "$1" | jq -r '.terminalSequence // empty' 2>/dev/null)
+    seq="${seq#*warp://cli-agent;}"
+    printf '%s' "${seq%$'\a'}"
+}
+
+export WARP_CLI_AGENT_PROTOCOL_VERSION=1
+export WARP_CLIENT_VERSION="v0.2026.07.01.08.00.stable_00"
+export CLAUDE_CODE_VERSION="2.1.141"
+
+echo ""
+echo "--- PreToolUse: AskUserQuestion ---"
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which database?"},{"question":"Which region?"}]}}' \
+    | bash "$HOOK_DIR/on-pre-tool-use.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "emits question_asked" "$BODY" ".event" "question_asked"
+assert_json_field "summary joins the questions" "$BODY" ".summary" "Which database? · Which region?"
+assert_json_field "tool_name present" "$BODY" ".tool_name" "AskUserQuestion"
+assert_json_field "common fields present" "$BODY" ".project" "proj"
+
+echo ""
+echo "--- PreToolUse: ExitPlanMode ---"
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","tool_name":"ExitPlanMode","tool_input":{"plan":"step one"}}' \
+    | bash "$HOOK_DIR/on-pre-tool-use.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "emits question_asked" "$BODY" ".event" "question_asked"
+assert_json_field "summary describes the plan approval" "$BODY" ".summary" "Plan ready for your approval"
+
+echo ""
+echo "--- PreToolUse: unparseable input still reports blocked ---"
+# A missing summary must never cost us the blocked state itself — that state is
+# the whole point of the hook.
+OUTPUT=$(echo 'not json at all' | bash "$HOOK_DIR/on-pre-tool-use.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "still emits question_asked" "$BODY" ".event" "question_asked"
+assert_json_field "falls back to a generic summary" "$BODY" ".summary" "Waiting for your answer"
+
+echo ""
+echo "--- Elicitation ---"
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","message":"Enter your API key"}' \
+    | bash "$HOOK_DIR/on-elicitation.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "emits question_asked" "$BODY" ".event" "question_asked"
+assert_json_field "summary from message" "$BODY" ".summary" "Enter your API key"
+
+OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj"}' \
+    | bash "$HOOK_DIR/on-elicitation.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "falls back when no message field" "$BODY" ".summary" "Waiting for your input"
+
+unset WARP_CLI_AGENT_PROTOCOL_VERSION
+unset WARP_CLIENT_VERSION
+unset CLAUDE_CODE_VERSION
 
 # --- Summary ---
 

@@ -47,13 +47,18 @@ The plugin communicates with Warp via OSC 777 escape sequences. Each hook script
 
 Payloads include a protocol version negotiated between the plugin and Warp (`min(plugin_version, warp_version)`), the session ID, working directory, and event-specific fields.
 
-The plugin registers six hooks:
+The plugin registers nine hooks:
 - **SessionStart** — emits the plugin version and a welcome system message
 - **Stop** — reads the transcript to extract your prompt and Claude's response, then sends a task-complete notification
+- **StopFailure** — fires when a turn ends in an error
 - **Notification** (`idle_prompt`) — fires when Claude has been idle and needs your input
 - **PermissionRequest** — fires when Claude wants to run a tool, includes the tool name and a preview of its input
+- **PreToolUse** (`AskUserQuestion`, `ExitPlanMode`) — fires when Claude stops to ask you a question or to get a plan approved, and reports the session as blocked on you
+- **Elicitation** — fires when an MCP server asks you for input, which blocks the session the same way
 - **UserPromptSubmit** — fires when you submit a prompt, signaling the session is active again
 - **PostToolUse** — fires when a tool call completes, signaling the session is no longer blocked
+
+`PermissionRequest` alone does not cover every case where Claude is waiting on you: it fires for tool permission only, and it never fires when running with `permissions.defaultMode=bypassPermissions` — the setup where a question or a plan approval is the only thing that stops the agent. `PreToolUse` and `Elicitation` close that gap, so Warp can show the session as blocked whenever a human is actually needed.
 
 ### Legacy Support
 
