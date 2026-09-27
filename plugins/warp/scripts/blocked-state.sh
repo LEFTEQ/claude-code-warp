@@ -8,14 +8,17 @@
 # call and must cost nothing while no session is blocked:
 #
 #   - hooks that report a Blocked state call mark_blocked;
-#   - on-post-tool-use.sh exits at once unless any_blocked (builtins only);
+#   - on-post-tool-use.sh exits at once unless any_blocked (builtins only),
+#     then unless its own session's marker exists;
 #   - hooks whose event leaves the Blocked state call clear_blocked.
 #
 # Usage:
 #   source "$SCRIPT_DIR/blocked-state.sh"
 #   mark_blocked "$INPUT"     # or clear_blocked "$INPUT"
 
-BLOCKED_DIR="${TMPDIR:-/tmp}/claude-warp-blocked"
+# Per user and owner-only: with TMPDIR unset this sits in a shared /tmp, where
+# another local user could pre-create the directory and plant symlinks.
+BLOCKED_DIR="${TMPDIR:-/tmp}/claude-warp-blocked-${UID}"
 
 # Marker path for the session named in the hook input ("unknown" when the
 # input carries no session_id, so mark and clear still pair up).
@@ -27,7 +30,12 @@ _blocked_marker() {
 }
 
 mark_blocked() {
-    mkdir -p "$BLOCKED_DIR" 2>/dev/null && : > "$(_blocked_marker "$1")" 2>/dev/null
+    local marker
+    mkdir -p -m 700 "$BLOCKED_DIR" 2>/dev/null
+    # Never write through a directory or marker someone else controls.
+    [ -d "$BLOCKED_DIR" ] && [ ! -L "$BLOCKED_DIR" ] && [ -O "$BLOCKED_DIR" ] || return 0
+    marker=$(_blocked_marker "$1")
+    [ -L "$marker" ] || : > "$marker" 2>/dev/null
     return 0
 }
 

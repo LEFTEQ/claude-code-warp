@@ -377,7 +377,7 @@ assert_json_field "falls back when no message field" "$BODY" ".summary" "Waiting
 echo ""
 echo "--- PostToolUse: silent unless a session is blocked ---"
 # It matches every tool call; Warp ignores tool_complete outside Blocked.
-rm -rf "$TMPDIR/claude-warp-blocked"
+rm -rf "$TMPDIR"/claude-warp-blocked*
 OUTPUT=$(echo '{"session_id":"s2","cwd":"/tmp/proj","tool_name":"Bash"}' \
     | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
 assert_eq "no output while nothing is blocked" "" "$OUTPUT"
@@ -395,6 +395,29 @@ assert_json_field "emits tool_complete" "$BODY" ".event" "tool_complete"
 OUTPUT=$(echo '{"session_id":"s2","cwd":"/tmp/proj","tool_name":"Bash"}' \
     | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
 assert_eq "marker cleared by the unblock" "" "$OUTPUT"
+
+echo ""
+echo "--- PostToolUse: another session's block keeps this one quiet ---"
+echo '{"session_id":"s4","cwd":"/tmp/proj","tool_name":"Edit","tool_input":{"file_path":"/tmp/x"}}' \
+    | bash "$HOOK_DIR/on-permission-request.sh" >/dev/null 2>&1
+OUTPUT=$(echo '{"session_id":"s5","cwd":"/tmp/proj","tool_name":"Bash"}' \
+    | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
+assert_eq "no tool_complete for an unblocked session" "" "$OUTPUT"
+OUTPUT=$(echo '{"session_id":"s4","cwd":"/tmp/proj","tool_name":"Edit"}' \
+    | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "the blocked session still unblocks" "$BODY" ".event" "tool_complete"
+
+echo ""
+echo "--- mark_blocked never writes through a planted symlink ---"
+BLOCKED=$(source "$HOOK_DIR/blocked-state.sh"; echo "$BLOCKED_DIR")
+mkdir -p -m 700 "$BLOCKED"
+echo keep > "$TMPDIR/victim"
+ln -s "$TMPDIR/victim" "$BLOCKED/s6"
+echo '{"session_id":"s6","cwd":"/tmp/proj","tool_name":"Edit","tool_input":{"file_path":"/tmp/x"}}' \
+    | bash "$HOOK_DIR/on-permission-request.sh" >/dev/null 2>&1
+assert_eq "symlink target untouched" "keep" "$(cat "$TMPDIR/victim")"
+rm -f "$BLOCKED/s6"
 
 echo ""
 echo "--- PromptSubmit clears a blocked marker ---"

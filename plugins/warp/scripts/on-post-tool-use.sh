@@ -9,6 +9,11 @@
 source "${BASH_SOURCE[0]%/*}/blocked-state.sh"
 any_blocked || exit 0
 
+# Some session is blocked; only this session's own marker makes its
+# tool_complete matter, so another blocked session keeps the rest quiet.
+INPUT=$(cat)
+[ -e "$(_blocked_marker "$INPUT")" ] || exit 0
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/should-use-structured.sh"
 
@@ -18,9 +23,6 @@ if ! should_use_structured; then
 fi
 
 source "$SCRIPT_DIR/build-payload.sh"
-
-# Read hook input from stdin
-INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 
