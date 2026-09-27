@@ -3,6 +3,17 @@
 # Sends a structured Warp notification after a tool call completes,
 # transitioning the session status from Blocked back to Running.
 
+# This hook fires on every tool call, and Warp ignores tool_complete unless the
+# session is Blocked: return before any subshell or jq unless a session
+# reported a Blocked state (see blocked-state.sh).
+source "${BASH_SOURCE[0]%/*}/blocked-state.sh"
+any_blocked || exit 0
+
+# Some session is blocked; only this session's own marker makes its
+# tool_complete matter, so another blocked session keeps the rest quiet.
+INPUT=$(cat)
+[ -e "$(_blocked_marker "$INPUT")" ] || exit 0
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/should-use-structured.sh"
 
@@ -13,12 +24,11 @@ fi
 
 source "$SCRIPT_DIR/build-payload.sh"
 
-# Read hook input from stdin
-INPUT=$(cat)
-
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 
 BODY=$(build_payload "$INPUT" "tool_complete" \
     --arg tool_name "$TOOL_NAME")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
+
+clear_blocked "$INPUT"

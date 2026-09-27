@@ -56,7 +56,7 @@ The plugin registers nine hooks:
 - **PreToolUse** (`AskUserQuestion`, `ExitPlanMode`) — fires when Claude stops to ask you a question or to get a plan approved, and reports the session as blocked on you
 - **Elicitation** — fires when an MCP server asks you for input, which blocks the session the same way
 - **UserPromptSubmit** — fires when you submit a prompt, signaling the session is active again
-- **PostToolUse** — fires when a tool call completes, signaling the session is no longer blocked
+- **PostToolUse** — fires when a tool call completes, signaling the session is no longer blocked. It matches every tool (an approved permission or an MCP elicitation can gate any of them) but only reports while a session is blocked: the blocking hooks drop a per-session marker under `$TMPDIR/claude-warp-blocked/`, and without one the hook exits using shell builtins alone (`scripts/blocked-state.sh`)
 
 `PermissionRequest` alone does not cover every case where Claude is waiting on you: it fires for tool permission only, and it never fires when running with `permissions.defaultMode=bypassPermissions` — the setup where a question or a plan approval is the only thing that stops the agent. `PreToolUse` and `Elicitation` close that gap, so Warp can show the session as blocked whenever a human is actually needed.
 

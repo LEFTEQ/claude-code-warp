@@ -13,6 +13,7 @@ if ! should_use_structured; then
 fi
 
 source "$SCRIPT_DIR/build-payload.sh"
+source "$SCRIPT_DIR/blocked-state.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -34,4 +35,5 @@ esac
 BODY=$(build_payload "$INPUT" "$EVENT" \
     --arg summary "$MSG")
 
+[ "$EVENT" = "question_asked" ] && mark_blocked "$INPUT"
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
