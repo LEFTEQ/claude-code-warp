@@ -313,6 +313,10 @@ export WARP_CLI_AGENT_PROTOCOL_VERSION=1
 export WARP_CLIENT_VERSION="v0.2026.07.01.08.00.stable_00"
 export CLAUDE_CODE_VERSION="2.1.141"
 
+# Blocked-state markers land under $TMPDIR; keep them out of the real one.
+REAL_TMPDIR="${TMPDIR:-}"
+export TMPDIR="$(mktemp -d)"
+
 echo ""
 echo "--- PreToolUse: AskUserQuestion ---"
 OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which database?"},{"question":"Which region?"}]}}' \
@@ -369,6 +373,41 @@ OUTPUT=$(echo '{"session_id":"s1","cwd":"/tmp/proj"}' \
     | bash "$HOOK_DIR/on-elicitation.sh" 2>/dev/null)
 BODY=$(osc_body "$OUTPUT")
 assert_json_field "falls back when no message field" "$BODY" ".summary" "Waiting for your input"
+
+echo ""
+echo "--- PostToolUse: silent unless a session is blocked ---"
+# It matches every tool call; Warp ignores tool_complete outside Blocked.
+rm -rf "$TMPDIR/claude-warp-blocked"
+OUTPUT=$(echo '{"session_id":"s2","cwd":"/tmp/proj","tool_name":"Bash"}' \
+    | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
+assert_eq "no output while nothing is blocked" "" "$OUTPUT"
+
+echo ""
+echo "--- PostToolUse: unblocks after a permission prompt, then goes quiet ---"
+# An approved permission can gate any tool, so the unblock must come from
+# that tool's PostToolUse, whatever it is.
+echo '{"session_id":"s2","cwd":"/tmp/proj","tool_name":"Edit","tool_input":{"file_path":"/tmp/x"}}' \
+    | bash "$HOOK_DIR/on-permission-request.sh" >/dev/null 2>&1
+OUTPUT=$(echo '{"session_id":"s2","cwd":"/tmp/proj","tool_name":"Edit"}' \
+    | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
+BODY=$(osc_body "$OUTPUT")
+assert_json_field "emits tool_complete" "$BODY" ".event" "tool_complete"
+OUTPUT=$(echo '{"session_id":"s2","cwd":"/tmp/proj","tool_name":"Bash"}' \
+    | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
+assert_eq "marker cleared by the unblock" "" "$OUTPUT"
+
+echo ""
+echo "--- PromptSubmit clears a blocked marker ---"
+echo '{"session_id":"s3","cwd":"/tmp/proj","message":"Pick one"}' \
+    | bash "$HOOK_DIR/on-elicitation.sh" >/dev/null 2>&1
+echo '{"session_id":"s3","cwd":"/tmp/proj","prompt":"never mind"}' \
+    | bash "$HOOK_DIR/on-prompt-submit.sh" >/dev/null 2>&1
+OUTPUT=$(echo '{"session_id":"s3","cwd":"/tmp/proj","tool_name":"Bash"}' \
+    | bash "$HOOK_DIR/on-post-tool-use.sh" 2>/dev/null)
+assert_eq "no tool_complete after the prompt moved on" "" "$OUTPUT"
+
+rm -rf "$TMPDIR"
+if [ -n "$REAL_TMPDIR" ]; then export TMPDIR="$REAL_TMPDIR"; else unset TMPDIR; fi
 
 unset WARP_CLI_AGENT_PROTOCOL_VERSION
 unset WARP_CLIENT_VERSION

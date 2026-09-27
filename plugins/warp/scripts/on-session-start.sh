@@ -19,9 +19,12 @@ EOF
     exit 0
 fi
 source "$SCRIPT_DIR/build-payload.sh"
+source "$SCRIPT_DIR/blocked-state.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
+
+sweep_stale_blocked
 
 # Best-effort Claude Code version detection.
 # Cache in $CLAUDE_ENV_FILE so subsequent hooks can skip the lookup, and

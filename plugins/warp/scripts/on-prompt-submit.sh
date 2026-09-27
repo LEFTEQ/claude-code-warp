@@ -12,6 +12,7 @@ if ! should_use_structured; then
 fi
 
 source "$SCRIPT_DIR/build-payload.sh"
+source "$SCRIPT_DIR/blocked-state.sh"
 
 # Read hook input from stdin
 INPUT=$(cat)
@@ -26,3 +27,5 @@ BODY=$(build_payload "$INPUT" "prompt_submit" \
     --arg query "$QUERY")
 
 "$SCRIPT_DIR/warp-notify.sh" "warp://cli-agent" "$BODY"
+
+clear_blocked "$INPUT"
